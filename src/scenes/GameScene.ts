@@ -451,7 +451,7 @@ export default class GameScene extends Phaser.Scene {
     if (lowestRow !== -1) {
       const lowestY = GridMath.getPixelCoordinates(lowestRow, 0).y;
       if (lowestY + BUBBLE_RADIUS >= this.deathLineY) {
-        this.triggerGameOver();
+        this.triggerGameOver('GAME OVER', '#ff0000');
         return;
       }
     }
