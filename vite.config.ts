@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: '/bubble-blast/',
+  base: '/',
   build: {
     outDir: 'dist',
   },

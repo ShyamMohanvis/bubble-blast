@@ -12,6 +12,11 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
   },
+  input: {
+    touch: {
+      capture: true  // Prevent iOS Safari from intercepting touch events
+    }
+  },
   physics: {
     default: 'arcade',
     arcade: {
