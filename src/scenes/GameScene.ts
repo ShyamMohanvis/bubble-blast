@@ -50,21 +50,23 @@ export default class GameScene extends Phaser.Scene {
   }
 
   preload() {
+    const base = import.meta.env.BASE_URL;
+    
     // Load all 10 level configurations
     for (let i = 1; i <= 10; i++) {
-      this.load.json(`level-${i}`, `/levels/level-00${i}.json`);
+      this.load.json(`level-${i}`, `${base}levels/level-00${i}.json`);
     }
 
     // Load authentic assets
     const colors = ['blue', 'orange', 'green', 'purple', 'red', 'yellow'];
     for (const color of colors) {
       const fileName = color.charAt(0).toUpperCase() + color.slice(1) + '.png';
-      this.load.image(`bubble_${color}`, `/assets/${fileName}`);
+      this.load.image(`bubble_${color}`, `${base}assets/${fileName}`);
     }
     
     // Load sounds
-    this.load.audio('pop', '/assets/audio/destroy.wav');
-    this.load.audio('shoot', '/assets/audio/explosion.wav');
+    this.load.audio('pop', `${base}assets/audio/destroy.wav`);
+    this.load.audio('shoot', `${base}assets/audio/explosion.wav`);
     
     // Load particle texture
     const graphics = this.make.graphics({x: 0, y: 0});
