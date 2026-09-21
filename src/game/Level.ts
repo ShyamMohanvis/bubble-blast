@@ -2,8 +2,8 @@ import { BubbleGrid, type BubbleData } from './BubbleGrid';
 import type { BubbleColor } from '../config/constants';
 
 export interface LevelConfig {
-  id: number;
-  colors: BubbleColor[];
+  id?: number;
+  colors?: BubbleColor[];
   grid: string[][];
 }
 
@@ -42,8 +42,8 @@ export class Level {
 
     for (let row = 0; row < config.grid.length; row++) {
       for (let col = 0; col < config.grid[row].length; col++) {
-        const char = config.grid[row][col];
-        const color = this.charToColor(char);
+        const cell = config.grid[row][col];
+        const color = typeof cell === 'string' ? this.charToColor(cell) : null;
         
         if (color) {
           const bubble: BubbleData = {

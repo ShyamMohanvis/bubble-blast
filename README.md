@@ -1,6 +1,6 @@
 # 🫧 Bubble Blast
 
-A polished 2D Bubble Shooter browser game built with **Phaser 3 + TypeScript + Vite**.
+A polished 2D Bubble Shooter browser game built with **Phaser 4 + TypeScript + Vite**.
 
 ## 🎮 Play Now
 
@@ -19,7 +19,7 @@ A polished 2D Bubble Shooter browser game built with **Phaser 3 + TypeScript + V
 - 🎨 Premium purple-themed UI with cyan neon accents
 - 🏆 10 levels with increasing difficulty
 - 🔄 Bubble swap mechanic
-- 💥 Pop & drop physics with particle effects
+- 💥 Pop and drop effects with particle feedback
 - 🔊 Sound effects (toggle on/off)
 - ⏸️ Pause menu with restart option
 - 💾 Auto-save progress (localStorage)
@@ -27,7 +27,7 @@ A polished 2D Bubble Shooter browser game built with **Phaser 3 + TypeScript + V
 
 ## 🛠️ Tech Stack
 
-- **Phaser 3** — Game framework
+- **Phaser 4** — Game framework
 - **TypeScript** — Type-safe code
 - **Vite** — Fast build tooling
 - **GitHub Pages** — Hosting via GitHub Actions
@@ -44,6 +44,12 @@ npm run dev
 # Build for production
 npm run build
 ```
+
+## Documentation
+
+- [Project documentation](docs/PROJECT.md) - architecture, gameplay flow, level data, persistence, and implementation status
+- [Product requirements](Bubble_Shooter_PRD.md)
+- [Technical requirements](Bubble_Shooter_TRD.md)
 
 ## 📦 Deployment
 

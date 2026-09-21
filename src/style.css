@@ -13,7 +13,7 @@ html, body {
   height: 100%;
   /* Use dynamic viewport height for iOS Safari address bar */
   height: 100dvh;
-  background-color: #000;
+  background: radial-gradient(circle at top, #101a42 0%, #05091c 58%, #02040e 100%);
   overflow: hidden;
   /* Prevent iOS Safari rubber-band bounce scrolling */
   overscroll-behavior: none;
@@ -44,6 +44,9 @@ html, body {
 #game-container canvas {
   display: block;
   margin: 0 auto;
-  /* Critical: prevent iOS from capturing touch for scrolling */
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
   touch-action: none;
+  image-rendering: auto;
 }

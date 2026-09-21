@@ -1,6 +1,11 @@
 import Phaser from 'phaser';
-import { BUBBLE_RADIUS, BUBBLE_DIAMETER, BOARD_WIDTH, BOARD_HEIGHT, SHOOTER_X, SHOOTER_Y, GRID_OFFSET_Y, GRID_OFFSET_X, BOARD_WIDTH_BUBBLES, type BubbleColor } from '../config/constants';
+import {
+  BUBBLE_RADIUS, BUBBLE_DIAMETER, BOARD_WIDTH, BOARD_HEIGHT,
+  SHOOTER_X, SHOOTER_Y, GRID_OFFSET_Y, GRID_OFFSET_X,
+  BOARD_WIDTH_BUBBLES, type BubbleColor
+} from '../config/constants';
 import { Level, type LevelConfig } from '../game/Level';
+import { getLevelAssetKey, LevelManager, MAX_LEVEL } from '../game/LevelManager';
 import { BubbleGrid, type BubbleData } from '../game/BubbleGrid';
 import { Shooter } from '../game/Shooter';
 import { GridMath } from '../algorithms/GridMath';
@@ -8,231 +13,232 @@ import { MatchFinder } from '../algorithms/MatchFinder';
 import { FloatingBubbleFinder } from '../algorithms/FloatingBubbleFinder';
 import { HUD } from '../ui/HUD';
 import { SaveSystem } from '../systems/SaveSystem';
+import { ATLAS, GAME, UI } from '../assets/keys';
+import { addNeonButton, addNeonPanel, addSky, candyText, playClick } from '../ui/UiFactory';
+import { generateNeonBubbleTextures, NEON_HEX } from '../utils/BubbleTextureGenerator';
+
+type GameState = 'PLAYING' | 'PROJECTILE_MOVING' | 'RESOLVING' | 'LEVEL_COMPLETE' | 'LEVEL_INTRO' | 'GAME_OVER';
+
+interface StarThresholds {
+  threeStars: number;
+  twoStars: number;
+}
 
 export default class GameScene extends Phaser.Scene {
   private grid!: BubbleGrid;
   private shooter!: Shooter;
   private hud!: HUD;
-  
-  // Visuals
-  private bubbleSprites: Map<string, Phaser.GameObjects.Sprite> = new Map();
-  private shooterSprite!: Phaser.GameObjects.Sprite;
-  private nextShooterSprite!: Phaser.GameObjects.Sprite;
-  private projectileSprite: Phaser.GameObjects.Sprite | null = null;
+
+  private bubbleSprites: Map<string, Phaser.GameObjects.Image> = new Map();
+  private shooterSprite!: Phaser.GameObjects.Image;
+  private nextShooterSprite!: Phaser.GameObjects.Image;
+  private projectileSprite: Phaser.GameObjects.Image | null = null;
   private aimingLine!: Phaser.GameObjects.Graphics;
-  
-  // Shooter UI
-  private shooterHalo!: Phaser.GameObjects.Graphics;
-  
+  private aimDots: Phaser.GameObjects.Arc[] = [];
+  private aimCursor!: Phaser.GameObjects.Arc;
+  private aimArrow!: Phaser.GameObjects.Triangle;
+  private shooterHalo!: Phaser.GameObjects.Arc;
+  private projectileTrail: Phaser.GameObjects.Arc[] = [];
+  private nextBubbleX = 0;
+  private nextBubbleY = 0;
+
   private score: number = 0;
   private currentLevel: number = 1;
+  private maxShots: number = 25;
+  private levelManager!: LevelManager;
+  private gameState: GameState = 'PLAYING';
+  private sceneGeneration = 0;
   private isGameOver: boolean = false;
   private isPaused: boolean = false;
   private deathLineY!: number;
+  private pauseGroup: Phaser.GameObjects.Group | null = null;
 
-  private colorHexMap: Record<BubbleColor, number> = {
-    blue: 0x1e90ff,
-    orange: 0xff8c00,
-    green: 0x32cd32,
-    purple: 0x9370db,
-    red: 0xff4500,
-    yellow: 0xffd700
+  private starThresholds: StarThresholds = {
+    threeStars: 0.50,
+    twoStars: 0.25,
   };
 
   constructor() {
     super('GameScene');
   }
 
-  init(data: { currentLevel?: number, score?: number }) {
+  init(data: { currentLevel?: number; score?: number }) {
+    this.sceneGeneration += 1;
     this.currentLevel = data.currentLevel || 1;
+    SaveSystem.setCurrentLevel(this.currentLevel);
+    this.levelManager = new LevelManager(this.currentLevel);
     this.score = data.score || 0;
+    this.gameState = 'PLAYING';
     this.isGameOver = false;
-  }
-
-  preload() {
-    const base = import.meta.env.BASE_URL;
-    
-    // Load all 10 level configurations
-    for (let i = 1; i <= 10; i++) {
-      this.load.json(`level-${i}`, `${base}levels/level-00${i}.json`);
-    }
-
-    // Load authentic assets
-    const colors = ['blue', 'orange', 'green', 'purple', 'red', 'yellow'];
-    for (const color of colors) {
-      const fileName = color.charAt(0).toUpperCase() + color.slice(1) + '.png';
-      this.load.image(`bubble_${color}`, `${base}assets/${fileName}`);
-    }
-    
-    // Load sounds
-    this.load.audio('pop', `${base}assets/audio/destroy.wav`);
-    this.load.audio('shoot', `${base}assets/audio/explosion.wav`);
-    
-    // Load particle texture
-    const graphics = this.make.graphics({x: 0, y: 0});
-    graphics.fillStyle(0xffffff, 1);
-    graphics.fillCircle(4, 4, 4);
-    graphics.generateTexture('particle', 8, 8);
-    graphics.destroy();
+    this.isPaused = false;
   }
 
   create() {
-    this.drawPremiumBackground();
+    generateNeonBubbleTextures(this);
+    this.drawBoard();
 
-    // Setup HUD and Sounds
     this.sound.mute = !SaveSystem.getSoundEnabled();
     this.hud = new HUD(this, this.currentLevel);
     this.hud.updateScore(this.score);
-    
-    // Hook up HUD buttons
+
     this.hud.onHomeClicked = () => {
-      if (!this.isGameOver) this.scene.start('MenuScene');
+      if (!this.isGameOver) {
+        this.sceneGeneration += 1;
+        this.scene.start('MenuScene');
+      }
     };
-    
     this.hud.onPauseClicked = () => this.togglePause();
-    
     this.hud.onSoundClicked = () => {
       const newState = SaveSystem.toggleSound();
       this.sound.mute = !newState;
-      return !newState; // return isMuted
+      return !newState;
     };
-    // 3. Generate better textures (removed - using authentic assets)
-    
-    // 4. Initialize Core Logic
-    const levelConfig: LevelConfig = this.cache.json.get(`level-${this.currentLevel}`);
+
+    const levelKey = getLevelAssetKey(this.currentLevel);
+    const levelConfig: LevelConfig =
+      this.cache.json.get(levelKey) || this.levelManager.generateLevel(this.currentLevel);
     const level = new Level();
     this.grid = level.createGrid(levelConfig);
-    this.shooter = new Shooter(SHOOTER_X, SHOOTER_Y - 20); // slightly higher to fit bottom bar
-    
-    // Give more shots for higher levels
-    this.shooter.shotsRemaining = 20 + (this.currentLevel * 5);
+    this.maxShots = 20 + this.currentLevel * 5;
+    this.shooter = new Shooter(SHOOTER_X, SHOOTER_Y - 20, this.colorsInPlay());
+    this.shooter.shotsRemaining = this.maxShots;
+    this.hud.updateShots(this.shooter.shotsRemaining);
 
-    // 5. Initial render
     this.renderGrid();
-    
-    this.aimingLine = this.add.graphics();
-    
-    // 6. Shooter Visuals
+    this.aimingLine = this.add.graphics().setDepth(40);
+    this.createAimFx();
     this.createShooterUI();
-    
-    // Draw visual death line
-    this.deathLineY = SHOOTER_Y - BUBBLE_RADIUS * 3;
-    const graphics = this.add.graphics();
-    graphics.lineStyle(2, 0xff0000, 0.4); // faint red line
-    graphics.beginPath();
-    graphics.moveTo(0, this.deathLineY);
-    graphics.lineTo(BOARD_WIDTH, this.deathLineY);
-    graphics.strokePath();
 
-    // 7. Input
+    this.deathLineY = SHOOTER_Y - BUBBLE_RADIUS * 3;
+    const dlGraphics = this.add.graphics().setDepth(8).setAlpha(0.85);
+    dlGraphics.lineStyle(4, 0xff00ff, 0.5);
+    dlGraphics.beginPath();
+    dlGraphics.moveTo(24, this.deathLineY);
+    dlGraphics.lineTo(BOARD_WIDTH - 24, this.deathLineY);
+    dlGraphics.strokePath();
+
     this.input.on('pointerup', this.handlePointerUp, this);
+    this.showLevelIntro();
   }
 
-  private drawPremiumBackground() {
-    const bg = this.add.graphics();
-    // Deep space purple background
-    bg.fillGradientStyle(0x330066, 0x330066, 0x1a0033, 0x1a0033, 1);
-    bg.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
+  private neonTexKey(color: BubbleColor): string {
+    return `neon_${color}`;
+  }
+
+  private neonHex(color: BubbleColor): number {
+    return NEON_HEX[color] ?? 0x00bbff;
+  }
+
+  private drawBoard() {
+    addSky(this);
 
     const leftWall = GRID_OFFSET_X - BUBBLE_RADIUS;
-    const rightWall = GRID_OFFSET_X - BUBBLE_RADIUS + (BOARD_WIDTH_BUBBLES * BUBBLE_DIAMETER);
+    const rightWall = GRID_OFFSET_X - BUBBLE_RADIUS + BOARD_WIDTH_BUBBLES * BUBBLE_DIAMETER;
+    const fieldW = rightWall - leftWall;
+    const fieldH = BOARD_HEIGHT - 196;
+    const fieldY = 82 + fieldH / 2;
 
-    // Dark translucent side borders outside the grid
-    bg.fillStyle(0x000000, 0.3);
-    bg.fillRect(0, 0, leftWall, BOARD_HEIGHT);
-    bg.fillRect(rightWall, 0, BOARD_WIDTH - rightWall, BOARD_HEIGHT);
+    const bgGraphics = this.add.graphics().setDepth(1);
+    bgGraphics.fillStyle(0x050a1a, 0.55);
+    bgGraphics.fillRect(leftWall, fieldY - fieldH / 2, fieldW, fieldH);
     
-    // Cyan glow borders for the playable area
-    bg.lineStyle(2, 0x3ae2ce, 0.5);
-    bg.beginPath();
-    bg.moveTo(leftWall, 60); // below top bar
-    bg.lineTo(leftWall, BOARD_HEIGHT);
-    bg.moveTo(rightWall, 60);
-    bg.lineTo(rightWall, BOARD_HEIGHT);
-    bg.strokePath();
+    bgGraphics.lineStyle(3, 0x00ffff, 1);
+    bgGraphics.strokeRect(leftWall, fieldY - fieldH / 2, fieldW, fieldH);
+    
+    bgGraphics.lineStyle(8, 0x00ffff, 0.3);
+    bgGraphics.strokeRect(leftWall - 4, fieldY - fieldH / 2 - 4, fieldW + 8, fieldH + 8);
+  }
+
+  private showLevelIntro() {
+    this.gameState = 'LEVEL_INTRO';
+    const levelText = candyText(
+      this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 - 24,
+      `LEVEL ${String(this.currentLevel).padStart(2, '0')}`, 46, '#00ffff', 402,
+    );
+    const readyText = candyText(
+      this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 + 52, 'GET READY', 22, '#ff00ff', 402,
+    ).setAlpha(0);
+    const line = this.add.rectangle(BOARD_WIDTH / 2, BOARD_HEIGHT / 2 + 28, 10, 2, 0x00ffff).setDepth(402);
+
+    this.tweens.add({ targets: levelText, scale: 1.12, duration: 420, ease: 'Back.Out' });
+    this.tweens.add({ targets: line, width: 260, duration: 420, ease: 'Cubic.Out' });
+    this.tweens.add({ targets: readyText, alpha: 1, delay: 430, duration: 220 });
+    this.time.delayedCall(900, () => {
+      levelText.destroy();
+      readyText.destroy();
+      line.destroy();
+      if (!this.isGameOver) this.gameState = 'PLAYING';
+    });
+  }
+
+  private colorsInPlay(): BubbleColor[] {
+    const colors = [...new Set(this.grid.getAllBubbles().map((b) => b.color))];
+    return colors.length > 0 ? colors : ['blue', 'orange', 'green'];
   }
 
   private createShooterUI() {
-    // Glowing halo
-    this.shooterHalo = this.add.graphics().setDepth(104);
-    this.shooterHalo.setPosition(this.shooter.x, this.shooter.y);
-    
+    this.shooterHalo = this.add
+      .circle(this.shooter.x, this.shooter.y, 54, 0x00ffff, 0.2)
+      .setDepth(104);
+
     this.tweens.add({
       targets: this.shooterHalo,
-      alpha: 0.2,
-      scaleX: 1.1,
-      scaleY: 1.1,
+      scaleX: this.shooterHalo.scaleX * 1.06,
+      scaleY: this.shooterHalo.scaleY * 1.06,
+      alpha: 0.4,
       yoyo: true,
       repeat: -1,
-      duration: 800
+      duration: 900,
     });
-    this.updateHaloColor();
 
-    this.shooterSprite = this.add.sprite(this.shooter.x, this.shooter.y, `bubble_${this.shooter.activeColor}`)
+    this.shooterSprite = this.add
+      .image(this.shooter.x, this.shooter.y, this.neonTexKey(this.shooter.activeColor))
       .setDisplaySize(BUBBLE_DIAMETER, BUBBLE_DIAMETER)
-      .setDepth(105);
-    
-    // Position Next Bubble and Swap button
-    const nextBubbleX = this.shooter.x + 80;
-    const nextBubbleY = this.shooter.y + 5;
-    
-    // Next Bubble Base (Cyan circle)
-    this.add.graphics()
-      .fillStyle(0x1a0b2e, 1) // match bottom bar
-      .lineStyle(2, 0x3ae2ce, 1) // cyan border
-      .fillCircle(nextBubbleX, nextBubbleY, BUBBLE_RADIUS * 0.8)
-      .strokeCircle(nextBubbleX, nextBubbleY, BUBBLE_RADIUS * 0.8)
-      .setDepth(104);
-      
-    this.nextShooterSprite = this.add.sprite(nextBubbleX, nextBubbleY, `bubble_${this.shooter.nextColor}`)
-      .setDisplaySize(BUBBLE_DIAMETER * 0.7, BUBBLE_DIAMETER * 0.7)
-      .setDepth(105);
-    this.updateNextBubbleDisplay();
+      .setDepth(105)
+      .setInteractive({ useHandCursor: true });
 
-    // Swap Button (Far right)
-    const swapX = nextBubbleX + 45;
-    const swapY = nextBubbleY;
+    this.nextBubbleX = this.shooter.x + 88;
+    this.nextBubbleY = this.shooter.y + 2;
 
-    this.add.graphics()
-      .fillStyle(0xff44aa, 1) // Pinkish button like screenshot
-      .fillCircle(swapX, swapY, 15)
-      .lineStyle(2, 0x1a0b2e, 1)
-      .strokeCircle(swapX, swapY, 15)
-      .setDepth(104);
-      
-    // Swap icon
-    this.add.text(swapX, swapY, '🔄', { fontSize: '14px' }).setOrigin(0.5).setDepth(105);
+    const nextBg = this.add.graphics().setDepth(103);
+    nextBg.fillStyle(0x050a22, 0.85);
+    nextBg.fillCircle(this.nextBubbleX, this.nextBubbleY, 36);
+    nextBg.lineStyle(2, 0x00ffff, 0.8);
+    nextBg.strokeCircle(this.nextBubbleX, this.nextBubbleY, 36);
+    nextBg.lineStyle(4, 0x00ffff, 0.3);
+    nextBg.strokeCircle(this.nextBubbleX, this.nextBubbleY, 38);
 
-    // Invisible hit area for easier clicking on Swap
-    this.add.circle(swapX, swapY, 25, 0x000000, 0)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.swapBubbles())
-      .setDepth(106);
-  }
+    candyText(this, this.nextBubbleX, this.nextBubbleY + 48, 'NEXT', 12, '#00ffff', 103);
 
-  private updateHaloColor() {
-    this.shooterHalo.clear();
-    const hexColor = this.colorHexMap[this.shooter.activeColor];
-    this.shooterHalo.lineStyle(6, hexColor, 0.6);
-    this.shooterHalo.strokeCircle(0, 0, BUBBLE_RADIUS + 5);
+    this.nextShooterSprite = this.add
+      .image(this.nextBubbleX, this.nextBubbleY, this.neonTexKey(this.shooter.nextColor))
+      .setDisplaySize(BUBBLE_DIAMETER * 0.72, BUBBLE_DIAMETER * 0.72)
+      .setDepth(105)
+      .setInteractive({ useHandCursor: true });
+
+    const midX = (this.shooter.x + this.nextBubbleX) / 2 + 8;
+    const arrow = this.add.graphics().setDepth(105);
+    arrow.lineStyle(3, 0xff00ff, 1);
+    arrow.beginPath();
+    arrow.moveTo(midX + 10, this.nextBubbleY - 28);
+    arrow.lineTo(midX - 10, this.nextBubbleY - 28);
+    arrow.lineTo(midX - 2, this.nextBubbleY - 36);
+    arrow.moveTo(midX - 10, this.nextBubbleY - 28);
+    arrow.lineTo(midX - 2, this.nextBubbleY - 20);
+    arrow.strokePath();
   }
 
   private swapBubbles() {
-    if (this.shooter.isShooting || this.isGameOver) return;
+    if (this.gameState !== 'PLAYING' || this.shooter.isShooting || this.isGameOver || this.isPaused) return;
+    playClick(this);
     this.shooter.swap();
-    this.shooterSprite.setTexture(`bubble_${this.shooter.activeColor}`);
-    this.updateNextBubbleDisplay();
-    this.updateHaloColor();
-  }
-
-  private updateNextBubbleDisplay() {
-    this.nextShooterSprite.setTexture(`bubble_${this.shooter.nextColor}`);
+    this.shooterSprite.setTexture(this.neonTexKey(this.shooter.activeColor));
+    this.nextShooterSprite.setTexture(this.neonTexKey(this.shooter.nextColor));
   }
 
   private togglePause() {
     if (this.isGameOver) return;
     this.isPaused = !this.isPaused;
-    
     if (this.isPaused) {
       this.physics.pause();
       this.showPauseMenu();
@@ -242,46 +248,34 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  private pauseGroup: Phaser.GameObjects.Group | null = null;
+  private createAimFx() {
+    for (let i = 0; i < 28; i++) {
+      this.aimDots.push(
+        this.add.circle(0, 0, 8, 0xffffff, 1).setVisible(false).setDepth(40),
+      );
+    }
+    this.aimCursor = this.add.circle(0, 0, 21, 0xffffff, 0).setStrokeStyle(3, 0xffffff, 1).setVisible(false).setDepth(41);
+    this.aimArrow = this.add.triangle(0, 0, 0, 18, 18, 18, 9, 0, 0xffffff, 1).setVisible(false).setDepth(42);
+  }
+
+  private showOverlay(title: string) {
+    const group = this.add.group();
+    const { dim, panel } = addNeonPanel(this, 440, 560, 400);
+    const titleText = candyText(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 - 190, title, 40, '#ffffff', 402);
+    group.addMultiple([dim, panel, titleText]);
+    return group;
+  }
 
   private showPauseMenu() {
-    this.pauseGroup = this.add.group();
-    
-    const bg = this.add.rectangle(BOARD_WIDTH/2, BOARD_HEIGHT/2, BOARD_WIDTH, BOARD_HEIGHT, 0x000000, 0.8).setDepth(300);
-    this.pauseGroup.add(bg);
-
-    const title = this.add.text(BOARD_WIDTH/2, BOARD_HEIGHT/2 - 120, 'PAUSED', { fontSize: '48px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(301);
-    this.pauseGroup.add(title);
-
-    // Resume
-    const resumeBtn = this.createMenuButton(BOARD_WIDTH/2, BOARD_HEIGHT/2 - 40, 'Resume', () => this.togglePause());
-    this.pauseGroup.addMultiple(resumeBtn);
-
-    // Restart
-    const restartBtn = this.createMenuButton(BOARD_WIDTH/2, BOARD_HEIGHT/2 + 20, 'Restart Level', () => {
+    this.pauseGroup = this.showOverlay('PAUSED');
+    const resume = addNeonButton(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 - 40, 'RESUME', () => this.togglePause(), 300, 86, 410);
+    const restart = addNeonButton(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 + 56, 'RESTART', () => {
       this.scene.restart({ currentLevel: this.currentLevel, score: 0 });
-    });
-    this.pauseGroup.addMultiple(restartBtn);
-
-    // Sound
-    const soundState = SaveSystem.getSoundEnabled();
-    const soundBtn = this.createMenuButton(BOARD_WIDTH/2, BOARD_HEIGHT/2 + 80, `Sound: ${soundState ? 'ON' : 'OFF'}`, undefined);
-    
-    // We hack the sound button click
-    const soundHit = soundBtn[0] as Phaser.GameObjects.Rectangle;
-    const soundText = soundBtn[2] as Phaser.GameObjects.Text;
-    soundHit.on('pointerdown', () => {
-      const newState = SaveSystem.toggleSound();
-      this.sound.mute = !newState;
-      soundText.setText(`Sound: ${newState ? 'ON' : 'OFF'}`);
-    });
-    this.pauseGroup.addMultiple(soundBtn);
-
-    // Home
-    const homeBtn = this.createMenuButton(BOARD_WIDTH/2, BOARD_HEIGHT/2 + 140, 'Home', () => {
+    }, 300, 86, 410, 0xff00ff);
+    const home = addNeonButton(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 + 152, 'HOME', () => {
       this.scene.start('MenuScene');
-    });
-    this.pauseGroup.addMultiple(homeBtn);
+    }, 300, 86, 410, 0x00ffff);
+    this.pauseGroup.addMultiple([resume, restart, home]);
   }
 
   private hidePauseMenu() {
@@ -291,324 +285,533 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  private createMenuButton(x: number, y: number, text: string, onClick?: () => void): Phaser.GameObjects.GameObject[] {
-    const bg = this.add.graphics()
-      .fillStyle(0x32cd32, 1)
-      .fillRoundedRect(x - 100, y - 20, 200, 40, 10)
-      .setDepth(301);
-    const txt = this.add.text(x, y, text, { fontSize: '20px', color: '#ffffff' }).setOrigin(0.5).setDepth(302);
-    
-    const hitArea = this.add.rectangle(x, y, 200, 40, 0, 0).setDepth(303).setInteractive({ useHandCursor: true });
-    if (onClick) {
-      hitArea.on('pointerdown', onClick);
-    }
-
-    return [hitArea, bg, txt];
-  }
-
-  update(time: number, delta: number) {
+  update(_time: number, delta: number) {
     if (this.isGameOver || this.isPaused) return;
+    if (this.gameState === 'PLAYING') this.drawTrajectory();
 
-    this.drawTrajectory();
-
-    if (this.shooter.isShooting) {
+    if (this.gameState === 'PROJECTILE_MOVING' && this.shooter.isShooting) {
       const collided = this.shooter.update(delta, this.grid);
-      
       if (this.projectileSprite) {
         this.projectileSprite.setPosition(this.shooter.projectileX, this.shooter.projectileY);
+        this.updateProjectileTrail();
       }
-
       if (collided) {
-        this.handleCollision();
+        this.gameState = 'RESOLVING';
+        this.doImpactFlash(this.shooter.projectileX, this.shooter.projectileY, this.shooter.activeColor);
+        const generation = this.sceneGeneration;
+        void this.handleCollision(generation).catch(() => {
+          if (generation !== this.sceneGeneration) return;
+          this.gameState = 'GAME_OVER';
+          this.triggerGameOver('Resolution error');
+        });
       }
     }
+  }
+
+  private doImpactFlash(x: number, y: number, color: BubbleColor) {
+    const hex = this.neonHex(color);
+    const flash = this.add.circle(x, y, BUBBLE_RADIUS * 1.5, hex, 0.6).setDepth(51).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: flash, alpha: 0, scale: 2, duration: 200, onComplete: () => flash.destroy() });
   }
 
   private drawTrajectory() {
     this.aimingLine.clear();
-    if (this.shooter.isShooting) return;
+    this.aimDots.forEach((dot) => dot.setVisible(false));
+    this.aimCursor.setVisible(false);
+    this.aimArrow.setVisible(false);
+    if (this.gameState !== 'PLAYING' || this.shooter.isShooting || this.projectileSprite) return;
 
     const pointer = this.input.activePointer;
-    if (pointer.y >= this.shooter.y) return; // Don't shoot downwards
+    const hasAimPointer = pointer.x > 0 && pointer.y > 0;
+    const pointerX = hasAimPointer ? pointer.x : this.shooter.x;
+    const pointerY = hasAimPointer ? pointer.y : this.shooter.y - 160;
+    if (pointerY >= this.shooter.y || pointerY < 88) return;
+    if (this.isSwapTarget(pointerX, pointerY)) return;
 
-    const dx = pointer.x - this.shooter.x;
-    const dy = pointer.y - this.shooter.y;
+    const dx = pointerX - this.shooter.x;
+    const dy = pointerY - this.shooter.y;
     const angle = Math.atan2(dy, dx);
-    
+    const tint = this.neonHex(this.shooter.activeColor);
+
     let currX = this.shooter.x;
     let currY = this.shooter.y;
     let vX = Math.cos(angle);
     let vY = Math.sin(angle);
-    
-    const step = 25; // Spacing between dots
-    let maxSteps = 40;
-    
-    const trajColor = this.colorHexMap[this.shooter.activeColor];
-    
+
+    const step = 12;
+    let maxSteps = 72;
     const leftWall = GRID_OFFSET_X - BUBBLE_RADIUS;
-    const rightWall = GRID_OFFSET_X - BUBBLE_RADIUS + (BOARD_WIDTH_BUBBLES * BUBBLE_DIAMETER);
-    
+    const rightWall = GRID_OFFSET_X - BUBBLE_RADIUS + BOARD_WIDTH_BUBBLES * BUBBLE_DIAMETER;
+    let lastX = currX;
+    let lastY = currY;
+    let lastAngle = angle;
+
     while (maxSteps > 0) {
       currX += vX * step;
       currY += vY * step;
+      if (currX - BUBBLE_RADIUS <= leftWall) { currX = leftWall + BUBBLE_RADIUS; vX *= -1; }
+      else if (currX + BUBBLE_RADIUS >= rightWall) { currX = rightWall - BUBBLE_RADIUS; vX *= -1; }
 
-      if (currX - BUBBLE_RADIUS <= leftWall) {
-        currX = leftWall + BUBBLE_RADIUS;
-        vX *= -1;
-      } else if (currX + BUBBLE_RADIUS >= rightWall) {
-        currX = rightWall - BUBBLE_RADIUS;
-        vX *= -1;
-      }
-
+      lastAngle = Math.atan2(vY, vX);
       const gridPos = GridMath.getGridCoordinates(currX, currY);
       if (currY <= GRID_OFFSET_Y || this.grid.hasBubble(gridPos.row, gridPos.col)) {
-        // Target ring
-        this.aimingLine.lineStyle(3, trajColor, 1);
-        this.aimingLine.strokeCircle(currX, currY, BUBBLE_RADIUS);
+        this.placeAimTip(currX, currY, lastAngle, tint);
         break;
       }
 
-      // Colored dot with white center
-      this.aimingLine.fillStyle(trajColor, 1);
-      this.aimingLine.fillCircle(currX, currY, 4);
-      this.aimingLine.fillStyle(0xffffff, 1);
-      this.aimingLine.fillCircle(currX, currY, 2);
-      
+      const pathIndex = 72 - maxSteps;
+      this.aimingLine.fillStyle(tint, Math.max(0.25, 0.9 - pathIndex / 100));
+      this.aimingLine.fillCircle(currX, currY, 3.2);
+
+      const dot = this.aimDots[pathIndex];
+      if (dot) {
+        const scale = 0.5 + (pathIndex % 4) * 0.08;
+        dot.setPosition(currX, currY).setScale(scale).setFillStyle(tint, 1).setVisible(true);
+      }
+      lastX = currX;
+      lastY = currY;
       maxSteps--;
+    }
+
+    if (!this.aimArrow.visible) {
+      this.placeAimTip(lastX, lastY, lastAngle, tint);
     }
   }
 
-  private handlePointerUp(pointer: Phaser.Input.Pointer) {
-    if (this.isGameOver || this.isPaused || this.shooter.isShooting) return;
-    if (pointer.y >= this.shooter.y) return; // clicking bottom bar
+  private placeAimTip(x: number, y: number, angle: number, tint: number) {
+    this.aimCursor.setPosition(x, y).setStrokeStyle(3, tint, 1).setVisible(true);
+    this.aimArrow
+      .setPosition(x + Math.cos(angle) * 18, y + Math.sin(angle) * 18)
+      .setRotation(angle + Math.PI/2).setFillStyle(tint, 1).setVisible(true);
+  }
 
+  private isSwapTarget(x: number, y: number) {
+    return (
+      Phaser.Math.Distance.Between(x, y, this.shooter.x, this.shooter.y) <= 52 ||
+      Phaser.Math.Distance.Between(x, y, this.nextBubbleX, this.nextBubbleY) <= 44
+    );
+  }
+
+  private handlePointerUp(pointer: Phaser.Input.Pointer) {
+    if (this.gameState !== 'PLAYING' || this.isGameOver || this.isPaused || this.shooter.isShooting) return;
+    if (this.isSwapTarget(pointer.x, pointer.y)) { this.swapBubbles(); return; }
+    if (pointer.y >= this.shooter.y || pointer.y < 88) return;
     if (this.shooter.shotsRemaining <= 0) return;
 
     this.shooter.shoot(pointer.x, pointer.y);
-    
-    this.sound.play('shoot', { volume: 0.5 });
-    
-    this.projectileSprite = this.add.sprite(
-      this.shooter.projectileX, 
-      this.shooter.projectileY, 
-      `bubble_${this.shooter.activeColor}`
-    ).setDisplaySize(BUBBLE_DIAMETER, BUBBLE_DIAMETER);
-    
+    this.gameState = 'PROJECTILE_MOVING';
+    this.hud.updateShots(this.shooter.shotsRemaining);
+    this.sound.play('shoot', { volume: 0.55 });
+    this.aimDots.forEach((dot) => dot.setVisible(false));
+    this.aimingLine.clear();
+    this.aimCursor.setVisible(false);
+    this.aimArrow.setVisible(false);
+
+    this.projectileSprite = this.add
+      .image(this.shooter.projectileX, this.shooter.projectileY, this.neonTexKey(this.shooter.activeColor))
+      .setDisplaySize(BUBBLE_DIAMETER, BUBBLE_DIAMETER)
+      .setDepth(50);
+
+    this.createProjectileTrail();
+
+    // Launcher recoil
+    const recoilAngle = this.shooter.projectileAngle;
+    const recoilDist = 6;
+    this.tweens.add({
+      targets: [this.shooterSprite, this.shooterHalo],
+      x: this.shooter.x - Math.cos(recoilAngle) * recoilDist,
+      y: this.shooter.y - Math.sin(recoilAngle) * recoilDist,
+      duration: 60,
+      yoyo: true,
+      ease: 'Quad.Out',
+    });
+
     this.shooterSprite.setVisible(false);
     this.shooterHalo.setVisible(false);
   }
 
+  private createProjectileTrail() {
+    this.projectileTrail.forEach((trail) => trail.destroy());
+    const hex = this.neonHex(this.shooter.activeColor);
+    this.projectileTrail = Array.from({ length: 6 }, (_, index) =>
+      this.add.circle(
+        this.shooter.projectileX, this.shooter.projectileY,
+        BUBBLE_RADIUS * (0.38 - index * 0.05), hex, 0.4 - index * 0.06,
+      ).setDepth(49).setBlendMode(Phaser.BlendModes.ADD),
+    );
+  }
 
+  private updateProjectileTrail() {
+    this.projectileTrail.forEach((trail, index) => {
+      const offset = (index + 1) * 6;
+      trail.setPosition(
+        this.shooter.projectileX - Math.cos(this.shooter.projectileAngle) * offset,
+        this.shooter.projectileY - Math.sin(this.shooter.projectileAngle) * offset,
+      );
+    });
+  }
 
-  private handleCollision() {
+  private async handleCollision(generation: number) {
     const snapPos = this.grid.getNearestEmptyCell(this.shooter.projectileX, this.shooter.projectileY);
-    
+
     const newBubble: BubbleData = {
       id: `b_shot_${Date.now()}`,
       color: this.shooter.activeColor,
       row: snapPos.row,
       col: snapPos.col,
-      active: true
+      active: true,
     };
     this.grid.addBubble(newBubble);
 
     const pixelPos = GridMath.getPixelCoordinates(snapPos.row, snapPos.col);
     const sprite = this.projectileSprite!;
-    sprite.setPosition(pixelPos.x, pixelPos.y);
+    sprite.setPosition(pixelPos.x, pixelPos.y).setDepth(10);
     this.bubbleSprites.set(newBubble.id, sprite);
     this.projectileSprite = null;
+    this.projectileTrail.forEach((trail) => trail.destroy());
+    this.projectileTrail = [];
 
-    // Impact Wobble
+    // Neighbor bounce
     const neighbors = GridMath.getNeighbors(snapPos.row, snapPos.col);
-    neighbors.forEach(n => {
+    neighbors.forEach((n) => {
       const neighborSprite = this.bubbleSprites.get(BubbleGrid.getKeyFromPos(n));
       if (neighborSprite) {
         const origY = neighborSprite.y;
-        this.tweens.add({
-          targets: neighborSprite,
-          y: origY - 4,
-          yoyo: true,
-          duration: 80,
-          ease: 'Sine.easeInOut'
-        });
+        this.tweens.add({ targets: neighborSprite, y: origY - 4, yoyo: true, duration: 80, ease: 'Sine.easeInOut' });
       }
     });
 
     const matches = MatchFinder.findMatchingCluster(this.grid, snapPos.row, snapPos.col);
-    
+
     if (matches.length >= 3) {
-      this.popBubbles(matches);
-      // Process floating bubbles
+      await this.popBubbles(matches);
+      if (generation !== this.sceneGeneration) return;
       const floaters = FloatingBubbleFinder.findFloatingBubbles(this.grid);
       if (floaters.length > 0) {
-        this.dropBubbles(floaters);
+        await this.dropBubbles(floaters);
+        if (generation !== this.sceneGeneration) return;
       }
-    } else {
-      // Sound for hit without match
-      // this.sound.play('hit');
     }
 
-    // Check if we reached the death line
     const lowestRow = this.grid.getLowestBubbleRow();
     if (lowestRow !== -1) {
       const lowestY = GridMath.getPixelCoordinates(lowestRow, 0).y;
       if (lowestY + BUBBLE_RADIUS >= this.deathLineY) {
-        this.triggerGameOver('GAME OVER', '#ff0000');
+        this.triggerGameOver('TOO CLOSE!');
         return;
       }
     }
 
-    // Win condition
     if (this.grid.getAllBubbles().length === 0) {
-      this.triggerLevelCleared();
+      await this.triggerLevelCleared();
       return;
     }
 
+    this.shooter.setPalette(this.colorsInPlay());
     this.shooter.reload();
-    this.shooterSprite.setTexture(`bubble_${this.shooter.activeColor}`);
+    this.shooterSprite.setTexture(this.neonTexKey(this.shooter.activeColor));
     this.shooterSprite.setVisible(true);
     this.shooterHalo.setVisible(true);
-    this.updateNextBubbleDisplay();
-    this.updateHaloColor();
-
+    this.nextShooterSprite.setTexture(this.neonTexKey(this.shooter.nextColor));
     this.checkGameOver();
+    if (!this.isGameOver) this.gameState = 'PLAYING';
   }
 
-  private popBubbles(bubbles: BubbleData[]) {
+  private async popBubbles(bubbles: BubbleData[]) {
     if (bubbles.length > 0) {
-      this.sound.play('pop', { volume: 0.6 });
+      this.sound.play(`pop${Phaser.Math.Between(1, 4)}`, { volume: 0.7 });
     }
-    bubbles.forEach(b => {
+
+    // Phase 1: pulse & glow (200ms)
+    const pulsePromises: Promise<void>[] = [];
+    bubbles.forEach((b) => {
+      const sprite = this.bubbleSprites.get(b.id);
+      if (sprite) {
+        pulsePromises.push(new Promise((resolve) => {
+          this.tweens.add({
+            targets: sprite,
+            scaleX: sprite.scaleX * 1.25,
+            scaleY: sprite.scaleY * 1.25,
+            duration: 200,
+            ease: 'Quad.Out',
+            onComplete: () => resolve(),
+          });
+        }));
+      }
+    });
+    await Promise.all(pulsePromises);
+
+    // Phase 2: flash + particles + floating score + disappear
+    const popPromises: Promise<void>[] = [];
+    const scorePerBubble = 10;
+    bubbles.forEach((b, i) => {
       this.grid.removeBubble(b.row, b.col);
       const sprite = this.bubbleSprites.get(b.id);
       if (sprite) {
-        // Particles
-        const hexColor = this.colorHexMap[b.color];
-        const emitter = this.add.particles(sprite.x, sprite.y, 'particle', {
-          speed: { min: 50, max: 150 },
-          angle: { min: 0, max: 360 },
-          scale: { start: 1, end: 0 },
-          alpha: { start: 1, end: 0 },
-          tint: hexColor,
-          lifespan: 400,
-          quantity: 15,
-          blendMode: 'ADD',
-          emitting: false
-        });
-        emitter.setDepth(50);
-        emitter.explode(15);
+        const hex = this.neonHex(b.color);
 
-        // Clean up emitter after explosion
+        // Flash
+        const flash = this.add.circle(sprite.x, sprite.y, BUBBLE_RADIUS * 1.2, 0xffffff, 0.8)
+          .setDepth(51).setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: flash, alpha: 0, scale: 1.8, duration: 150, onComplete: () => flash.destroy() });
+
+        // Particles
+        const emitter = this.add.particles(sprite.x, sprite.y, 'neon_particle', {
+          speed: { min: 60, max: 180 },
+          angle: { min: 0, max: 360 },
+          scale: { start: 1.2, end: 0 },
+          alpha: { start: 1, end: 0 },
+          tint: hex,
+          lifespan: 450,
+          quantity: 12,
+          blendMode: 'ADD',
+          emitting: false,
+        });
+        emitter.setDepth(52);
+        emitter.explode(12);
         this.time.delayedCall(500, () => emitter.destroy());
 
+        // Floating score
+        if (i === 0) {
+          const totalScore = bubbles.length * scorePerBubble;
+          const floatText = this.add.text(sprite.x, sprite.y - 10, `+${totalScore}`, {
+            fontFamily: '"Orbitron", sans-serif', fontSize: '22px', color: '#ffffff',
+            stroke: '#000000', strokeThickness: 3,
+          }).setOrigin(0.5).setDepth(55).setBlendMode(Phaser.BlendModes.ADD);
+          this.tweens.add({ targets: floatText, y: floatText.y - 50, alpha: 0, duration: 800, delay: 100, onComplete: () => floatText.destroy() });
+        }
+
+        // Pop animation
         this.tweens.add({
           targets: sprite,
-          scaleX: 1.3,
-          scaleY: 1.3,
+          scaleX: sprite.scaleX * 1.4,
+          scaleY: sprite.scaleY * 1.4,
           alpha: 0,
           duration: 150,
-          onComplete: () => sprite.destroy()
+          onComplete: () => sprite.destroy(),
         });
+        popPromises.push(new Promise((resolve) => this.time.delayedCall(500, resolve)));
         this.bubbleSprites.delete(b.id);
       }
     });
-    this.score += bubbles.length * 10;
+    this.score += bubbles.length * scorePerBubble;
     this.hud.updateScore(this.score);
+    await Promise.all(popPromises);
   }
 
-  private dropBubbles(bubbles: BubbleData[]) {
-    bubbles.forEach(b => {
+  private async dropBubbles(bubbles: BubbleData[]) {
+    const animations: Promise<void>[] = [];
+    bubbles.forEach((b) => {
       this.grid.removeBubble(b.row, b.col);
       const sprite = this.bubbleSprites.get(b.id);
       if (sprite) {
+        const hex = this.neonHex(b.color);
+
         this.physics.world.enable(sprite);
         const body = sprite.body as Phaser.Physics.Arcade.Body;
-        body.setCollideWorldBounds(true); 
+        body.setCollideWorldBounds(true);
         body.setBounce(0.5, 0.5);
-        body.setGravityY(1000 + Phaser.Math.Between(-100, 100)); 
+        body.setGravityY(1000 + Phaser.Math.Between(-100, 100));
         body.setVelocity(Phaser.Math.Between(-150, 150), Phaser.Math.Between(-50, 50));
         body.setAngularVelocity(Phaser.Math.Between(-300, 300));
 
+        // Glow while falling
+        const glow = this.add.circle(sprite.x, sprite.y, BUBBLE_RADIUS * 0.8, hex, 0.3)
+          .setDepth(9).setBlendMode(Phaser.BlendModes.ADD);
         this.tweens.add({
-          targets: sprite,
-          alpha: 0,
-          duration: 1000,
-          delay: 1500,
-          onComplete: () => sprite.destroy()
+          targets: glow, alpha: 0, duration: 1800, delay: 700,
+          onUpdate: () => glow.setPosition(sprite.x, sprite.y),
+          onComplete: () => {
+            // Small particle burst on disappear
+            const emitter = this.add.particles(sprite.x, sprite.y, 'neon_particle', {
+              speed: { min: 30, max: 80 }, angle: { min: 0, max: 360 },
+              scale: { start: 0.8, end: 0 }, alpha: { start: 0.8, end: 0 },
+              tint: hex, lifespan: 300, quantity: 6, blendMode: 'ADD', emitting: false,
+            });
+            emitter.setDepth(50); emitter.explode(6);
+            this.time.delayedCall(400, () => emitter.destroy());
+            glow.destroy();
+          },
         });
+
+        this.tweens.add({
+          targets: sprite, alpha: 0, duration: 1000, delay: 1500,
+          onComplete: () => sprite.destroy(),
+        });
+        animations.push(new Promise((resolve) => this.time.delayedCall(2500, resolve)));
         this.bubbleSprites.delete(b.id);
       }
     });
     this.score += bubbles.length * 20;
     this.hud.updateScore(this.score);
+    await Promise.all(animations);
   }
 
   private checkGameOver() {
     const bubbles = this.grid.getAllBubbles();
-    
-    // Win Condition
     if (bubbles.length === 0) {
-      if (this.currentLevel < 10) {
-        this.triggerLevelCleared();
-      } else {
-        this.triggerGameOver('GAME BEATEN!', '#00ff00');
-      }
+      this.triggerLevelCleared();
       return;
     }
-
-    // Out of shots
     if (this.shooter.shotsRemaining <= 0) {
-      this.triggerGameOver('OUT OF SHOTS', '#ff4444');
+      this.triggerGameOver('OUT OF SHOTS');
       return;
     }
-
-    // Grid reached bottom
     const lowestThreshold = this.shooter.y - BUBBLE_DIAMETER;
     for (const b of bubbles) {
       const p = GridMath.getPixelCoordinates(b.row, b.col);
       if (p.y >= lowestThreshold) {
-        this.triggerGameOver('GAME OVER', '#ff0000');
+        this.triggerGameOver('TOO CLOSE!');
         return;
       }
     }
   }
 
-  private triggerLevelCleared() {
-    this.isGameOver = true;
-    
-    SaveSystem.unlockLevel(this.currentLevel + 1);
-
-    const bg = this.add.rectangle(BOARD_WIDTH/2, BOARD_HEIGHT/2, BOARD_WIDTH, BOARD_HEIGHT, 0x000000, 0.7).setDepth(200);
-    const text = this.add.text(BOARD_WIDTH/2, BOARD_HEIGHT/2, 'LEVEL CLEARED!', { fontSize: '48px', color: '#00ff00', fontStyle: 'bold' }).setOrigin(0.5).setDepth(201);
-    
-    // Auto-advance after 2 seconds
-    this.time.delayedCall(2000, () => {
-      this.scene.restart({ currentLevel: this.currentLevel + 1, score: this.score });
-    });
+  private calculateStars(): number {
+    const pct = this.shooter.shotsRemaining / this.maxShots;
+    if (pct >= this.starThresholds.threeStars) return 3;
+    if (pct >= this.starThresholds.twoStars) return 2;
+    return 1;
   }
 
-  private triggerGameOver(msg: string, color: string) {
+  private async triggerLevelCleared() {
+    if (this.gameState === 'LEVEL_COMPLETE') return;
+    this.gameState = 'LEVEL_COMPLETE';
     this.isGameOver = true;
-    
-    const bg = this.add.rectangle(BOARD_WIDTH/2, BOARD_HEIGHT/2, BOARD_WIDTH, BOARD_HEIGHT, 0x000000, 0.7).setDepth(200);
-    const text = this.add.text(BOARD_WIDTH/2, BOARD_HEIGHT/2 - 50, msg, { fontSize: '48px', color: color, fontStyle: 'bold' }).setOrigin(0.5).setDepth(201);
-    const restartBtn = this.add.text(BOARD_WIDTH/2, BOARD_HEIGHT/2 + 50, 'Click to Restart', { fontSize: '24px', color: '#ffffff' }).setOrigin(0.5).setDepth(201);
-    
-    restartBtn.setInteractive({ useHandCursor: true });
-    restartBtn.on('pointerdown', () => {
-      this.scene.restart({ currentLevel: this.currentLevel, score: 0 });
+
+    const nextLevel = this.levelManager.completeLevel();
+    const hasNextLevel = this.currentLevel < MAX_LEVEL;
+    if (hasNextLevel) {
+      SaveSystem.unlockLevel(nextLevel);
+      SaveSystem.setCurrentLevel(nextLevel);
+    } else {
+      SaveSystem.setCurrentLevel(MAX_LEVEL);
+    }
+
+    const stars = this.calculateStars();
+    SaveSystem.setStarRating(this.currentLevel, stars);
+
+    // Neon particle burst
+    const burstEmitter = this.add.particles(BOARD_WIDTH / 2, BOARD_HEIGHT / 2, 'neon_particle', {
+      speed: { min: 100, max: 350 }, angle: { min: 0, max: 360 },
+      scale: { start: 1.5, end: 0 }, alpha: { start: 1, end: 0 },
+      tint: [0x00ffff, 0xff00ff, 0xffff00, 0x00ff00],
+      lifespan: 800, quantity: 40, blendMode: 'ADD', emitting: false,
     });
+    burstEmitter.setDepth(450);
+    burstEmitter.explode(40);
+    this.time.delayedCall(900, () => burstEmitter.destroy());
+
+    // Screen flash
+    const screenFlash = this.add.rectangle(BOARD_WIDTH / 2, BOARD_HEIGHT / 2, BOARD_WIDTH, BOARD_HEIGHT, 0xffffff, 0.3)
+      .setDepth(449).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: screenFlash, alpha: 0, duration: 400, onComplete: () => screenFlash.destroy() });
+    this.sound.play('pop4', { volume: 0.7 });
+
+    await new Promise<void>((resolve) => this.time.delayedCall(500, resolve));
+
+    // LEVEL COMPLETE text
+    const title = candyText(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 - 130, 'LEVEL COMPLETE', 36, '#00ffff', 452);
+    this.tweens.add({ targets: title, scale: 1.1, duration: 300, ease: 'Back.Out' });
+
+    await new Promise<void>((resolve) => this.time.delayedCall(400, resolve));
+
+    // Score
+    const bonus = this.currentLevel * 100;
+    const scoreText = candyText(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 - 60, `SCORE ${this.score + bonus}`, 26, '#ff00ff', 452);
+    this.score += bonus;
+    this.hud.updateScore(this.score);
+
+    await new Promise<void>((resolve) => this.time.delayedCall(300, resolve));
+
+    // Star animation
+    const starY = BOARD_HEIGHT / 2 + 20;
+    const starSpacing = 70;
+    const starStartX = BOARD_WIDTH / 2 - starSpacing;
+
+    for (let i = 0; i < 3; i++) {
+      const sx = starStartX + i * starSpacing;
+      const emptyKey = 'neon_star_empty';
+      const filledKey = 'neon_star';
+      const isEarned = i < stars;
+
+      const starImg = this.add.image(sx, starY, emptyKey).setDisplaySize(48, 48).setDepth(453).setScale(0);
+      this.tweens.add({
+        targets: starImg, scale: 1, duration: 300, delay: i * 250,
+        ease: 'Back.Out',
+        onComplete: () => {
+          if (isEarned) {
+            starImg.setTexture(filledKey);
+            this.tweens.add({
+              targets: starImg, scaleX: 1.3, scaleY: 1.3, duration: 150, yoyo: true, ease: 'Quad.Out',
+            });
+            // Star particle burst
+            const sEmitter = this.add.particles(sx, starY, 'neon_particle', {
+              speed: { min: 40, max: 120 }, angle: { min: 0, max: 360 },
+              scale: { start: 0.8, end: 0 }, alpha: { start: 1, end: 0 },
+              tint: 0xffff00, lifespan: 400, quantity: 8, blendMode: 'ADD', emitting: false,
+            });
+            sEmitter.setDepth(454);
+            sEmitter.explode(8);
+            this.time.delayedCall(500, () => sEmitter.destroy());
+          }
+        },
+      });
+    }
+
+    // Wait for star animation to finish
+    await new Promise<void>((resolve) => this.time.delayedCall(3 * 250 + 500, resolve));
+
+    // Fade out everything
+    this.bubbleSprites.forEach((s) => {
+      this.tweens.add({ targets: s, alpha: 0, scale: 0.7, duration: 500 });
+    });
+    await new Promise<void>((resolve) => this.time.delayedCall(600, resolve));
+
+    // Destroy texts
+    title.destroy();
+    scoreText.destroy();
+
+    // Auto-transition to next level
+    if (hasNextLevel) {
+      this.scene.restart({ currentLevel: nextLevel, score: this.score });
+    } else {
+      this.triggerGameOver('YOU WON!');
+    }
+  }
+
+  private triggerGameOver(msg: string) {
+    this.isGameOver = true;
+    this.showOverlay(msg);
+    const restart = addNeonButton(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 + 36, 'TRY AGAIN', () => {
+      this.scene.restart({ currentLevel: this.currentLevel, score: 0 });
+    }, 300, 86, 410, 0x00ffff);
+    const home = addNeonButton(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 + 132, 'HOME', () => {
+      this.scene.start('MenuScene');
+    }, 300, 86, 410, 0xff00ff);
   }
 
   private renderGrid() {
     const bubbles = this.grid.getAllBubbles();
-    bubbles.forEach(b => {
+    bubbles.forEach((b) => {
       const pos = GridMath.getPixelCoordinates(b.row, b.col);
-      const sprite = this.add.sprite(pos.x, pos.y, `bubble_${b.color}`)
-        .setDisplaySize(BUBBLE_DIAMETER, BUBBLE_DIAMETER);
+      const sprite = this.add
+        .image(pos.x, pos.y, this.neonTexKey(b.color))
+        .setDisplaySize(BUBBLE_DIAMETER, BUBBLE_DIAMETER)
+        .setDepth(10);
       this.bubbleSprites.set(b.id, sprite);
+
+      // Idle pulse
+      this.tweens.add({
+        targets: sprite,
+        scaleX: sprite.scaleX * 1.04,
+        scaleY: sprite.scaleY * 1.04,
+        yoyo: true,
+        repeat: -1,
+        duration: 1200 + Phaser.Math.Between(-200, 200),
+        ease: 'Sine.easeInOut',
+        delay: Phaser.Math.Between(0, 600),
+      });
     });
   }
-
-    // Removed: Procedural generation is no longer needed
 }

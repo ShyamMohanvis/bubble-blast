@@ -1,6 +1,8 @@
-import Phaser from 'phaser';
-import { BOARD_WIDTH, BOARD_HEIGHT } from '../config/constants';
+﻿import Phaser from 'phaser';
+import { BOARD_HEIGHT, BOARD_WIDTH, type BubbleColor } from '../config/constants';
 import { SaveSystem } from '../systems/SaveSystem';
+import { addNeonButton, addNeonPanel, addSky, addNeonSoundToggle, neonText } from '../ui/UiFactory';
+import { generateNeonBubbleTextures } from '../utils/BubbleTextureGenerator';
 
 export default class MenuScene extends Phaser.Scene {
   constructor() {
@@ -8,83 +10,79 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   create() {
-    this.drawPremiumBackground();
+    generateNeonBubbleTextures(this);
+    addSky(this);
+    this.spawnDecorBubbles();
 
-    // Logo / Title
-    this.add.text(BOARD_WIDTH / 2, BOARD_HEIGHT * 0.3, 'BUBBLE BLAST', {
-      fontSize: '56px',
-      color: '#ffffff',
-      fontStyle: 'bold',
-      stroke: '#1a5090',
-      strokeThickness: 8,
-      shadow: { color: '#000000', fill: true, offsetX: 4, offsetY: 4, blur: 8 }
-    }).setOrigin(0.5);
+    // Futuristic Title
+    neonText(this, BOARD_WIDTH / 2, 220, 'BUBBLE\nSHOOTER', 56, '#00ffff', 10);
+    neonText(this, BOARD_WIDTH / 2, 330, 'CLASSIC', 32, '#ff00ff', 10);
 
     // Play Button
-    const playBtnBg = this.add.graphics()
-      .fillStyle(0x32cd32, 1) // Green
-      .lineStyle(4, 0xffffff, 1)
-      .fillRoundedRect(BOARD_WIDTH / 2 - 100, BOARD_HEIGHT * 0.55, 200, 60, 30)
-      .strokeRoundedRect(BOARD_WIDTH / 2 - 100, BOARD_HEIGHT * 0.55, 200, 60, 30);
-      
-    const playText = this.add.text(BOARD_WIDTH / 2, BOARD_HEIGHT * 0.55 + 30, 'PLAY', {
-      fontSize: '32px',
+    addNeonButton(this, BOARD_WIDTH / 2, 540, 'PLAY', () => {
+      this.startGame();
+    }, 280, 80, 20, 0x00ffff);
+
+    // How to Play Button
+    addNeonButton(this, BOARD_WIDTH / 2, 650, 'HOW TO PLAY', () => {
+      this.showHelp();
+    }, 280, 70, 20, 0xff00ff);
+
+    // Sound toggle
+    addNeonSoundToggle(this, BOARD_WIDTH / 2, 760);
+  }
+
+  private startGame() {
+    const level = SaveSystem.getStartLevel();
+    SaveSystem.setCurrentLevel(level);
+    this.scene.start('GameScene', { currentLevel: level, score: 0 });
+  }
+
+  private showHelp() {
+    const { dim, panel } = addNeonPanel(this, 400, 500, 400, 0xff00ff);
+    
+    const title = neonText(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 - 180, 'HOW TO PLAY', 32, '#00ffff', 401);
+    
+    const copy = this.add.text(BOARD_WIDTH / 2, BOARD_HEIGHT / 2 - 30, 'Aim and tap to shoot.\n\nMatch 3+ of the same color.\n\nClear the board before\nshots run out!', {
+      fontFamily: '"Orbitron", "Trebuchet MS", sans-serif',
+      fontSize: '22px',
       color: '#ffffff',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
+      align: 'center',
+      lineSpacing: 10,
+    }).setOrigin(0.5).setDepth(401);
 
-    const playBtnHit = this.add.rectangle(BOARD_WIDTH / 2, BOARD_HEIGHT * 0.55 + 30, 200, 60, 0, 0)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerover', () => playBtnBg.setScale(1.05))
-      .on('pointerout', () => playBtnBg.setScale(1))
-      .on('pointerdown', () => {
-        this.scene.start('LevelSelectScene');
-      });
-
-    // Sound Toggle
-    this.createSoundToggle();
+    const closeBtn = addNeonButton(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 + 150, 'GOT IT', () => {
+      dim.destroy();
+      panel.destroy();
+      title.destroy();
+      copy.destroy();
+      closeBtn.destroy();
+    }, 240, 70, 402, 0x00ffff);
   }
 
-  private createSoundToggle() {
-    const isSoundOn = SaveSystem.getSoundEnabled();
-    const soundText = this.add.text(BOARD_WIDTH / 2, BOARD_HEIGHT * 0.8, isSoundOn ? '🔊 Sound: ON' : '🔇 Sound: OFF', {
-      fontSize: '24px',
-      color: '#ffffff'
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+  private spawnDecorBubbles() {
+    const colors: BubbleColor[] = ['blue', 'green', 'red', 'purple', 'orange'];
+    for (let i = 0; i < 16; i++) {
+      const color = colors[i % colors.length];
+      const r = Phaser.Math.Between(16, 32);
+      const x = Phaser.Math.Between(28, BOARD_WIDTH - 28);
+      const y = Phaser.Math.Between(50, BOARD_HEIGHT - 50);
+      const bubble = this.add.image(x, y, `neon_${color}`)
+        .setDisplaySize(r * 2, r * 2)
+        .setAlpha(0.42)
+        .setDepth(1);
 
-    soundText.on('pointerdown', () => {
-      const newState = SaveSystem.toggleSound();
-      soundText.setText(newState ? '🔊 Sound: ON' : '🔇 Sound: OFF');
-      this.sound.mute = !newState;
-    });
-    
-    this.sound.mute = !isSoundOn;
-  }
-
-  private drawPremiumBackground() {
-    const bg = this.add.graphics();
-    bg.fillGradientStyle(0x60c0ff, 0x60c0ff, 0x1e90ff, 0x1e90ff, 1);
-    bg.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
-    
-    // Some floating decorative bubbles
-    const colors = [0x32cd32, 0xff8c00, 0x1e90ff, 0x9370db, 0xff4500, 0xffd700];
-    for (let i = 0; i < 20; i++) {
-      const r = Phaser.Math.Between(10, 40);
-      const x = Phaser.Math.Between(0, BOARD_WIDTH);
-      const y = Phaser.Math.Between(0, BOARD_HEIGHT);
-      const c = colors[Phaser.Math.Between(0, colors.length - 1)];
-      
-      const b = this.add.circle(x, y, r, c, 0.4);
-      
       this.tweens.add({
-        targets: b,
-        y: y - Phaser.Math.Between(50, 150),
-        x: x + Phaser.Math.Between(-30, 30),
+        targets: bubble,
+        y: y - Phaser.Math.Between(20, 80),
+        x: x + Phaser.Math.Between(-18, 18),
+        angle: Phaser.Math.Between(-14, 14),
         yoyo: true,
         repeat: -1,
-        duration: Phaser.Math.Between(3000, 6000),
-        ease: 'Sine.easeInOut'
+        duration: Phaser.Math.Between(2600, 5000),
+        ease: 'Sine.easeInOut',
       });
     }
   }
 }
+

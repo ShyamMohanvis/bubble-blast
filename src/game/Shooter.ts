@@ -11,25 +11,33 @@ export class Shooter {
   public isShooting: boolean = false;
   public projectileX: number = 0;
   public projectileY: number = 0;
+  public projectileAngle: number = -Math.PI / 2;
   
   public shotsRemaining: number = 20;
   
   private velocityX: number = 0;
   private velocityY: number = 0;
 
-  constructor(x: number, y: number) {
+  private palette: BubbleColor[] = [...COLORS];
+
+  constructor(x: number, y: number, palette?: BubbleColor[]) {
     this.x = x;
     this.y = y;
+    this.setPalette(palette);
     this.activeColor = this.getRandomColor();
     this.nextColor = this.getRandomColor();
   }
 
+  setPalette(palette?: BubbleColor[]) {
+    this.palette = palette && palette.length > 0 ? [...palette] : [...COLORS];
+  }
+
   private getRandomColor(): BubbleColor {
-    return COLORS[Math.floor(Math.random() * COLORS.length)];
+    return this.palette[Math.floor(Math.random() * this.palette.length)];
   }
 
   reload() {
-    this.activeColor = this.nextColor;
+    this.activeColor = this.palette.includes(this.nextColor) ? this.nextColor : this.getRandomColor();
     this.nextColor = this.getRandomColor();
     this.isShooting = false;
   }
@@ -52,6 +60,7 @@ export class Shooter {
     this.shotsRemaining--;
     
     const angle = Math.atan2(dy, dx);
+    this.projectileAngle = angle;
 
     this.velocityX = Math.cos(angle) * BUBBLE_SPEED;
     this.velocityY = Math.sin(angle) * BUBBLE_SPEED;

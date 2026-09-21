@@ -1,19 +1,18 @@
-import Phaser from 'phaser';
-import { BOARD_WIDTH, BOARD_HEIGHT } from '../config/constants';
+﻿import Phaser from 'phaser';
+import { BOARD_HEIGHT, BOARD_WIDTH } from '../config/constants';
+import { SaveSystem } from '../systems/SaveSystem';
+import { addNeonButton, addNeonSoundToggle, neonText } from './UiFactory';
 
 export class HUD {
   private scene: Phaser.Scene;
-  private topBar!: Phaser.GameObjects.Graphics;
-  private bottomBar!: Phaser.GameObjects.Graphics;
   private scoreText!: Phaser.GameObjects.Text;
-  
-  public onSettingsClicked?: () => void;
-  public onHomeClicked?: () => void;
-  public onSoundClicked?: () => boolean; // returns isMuted
-  public onPauseClicked?: () => void;
-  
+  private shotsText!: Phaser.GameObjects.Text;
   private level: number;
-  
+
+  public onHomeClicked?: () => void;
+  public onSoundClicked?: () => boolean;
+  public onPauseClicked?: () => void;
+
   constructor(scene: Phaser.Scene, level: number = 1) {
     this.scene = scene;
     this.level = level;
@@ -21,99 +20,57 @@ export class HUD {
   }
 
   private create() {
-    // --- TOP BAR ---
-    this.topBar = this.scene.add.graphics();
-    this.topBar.fillStyle(0x1a0b2e, 1); // Dark purple
-    this.topBar.fillRect(0, 0, BOARD_WIDTH, 60);
+    // Top HUD background (dark translucent)
+    const topBg = this.scene.add.graphics().setDepth(100);
+    topBg.fillStyle(0x050a22, 0.7);
+    topBg.fillRoundedRect(10, 10, BOARD_WIDTH - 20, 70, 12);
+    topBg.lineStyle(2, 0x00ffff, 0.8);
+    topBg.strokeRoundedRect(10, 10, BOARD_WIDTH - 20, 70, 12);
+
+    // MENU button
+    addNeonButton(this.scene, 70, 45, 'MENU', () => {
+      this.onPauseClicked?.();
+    }, 100, 40, 102, 0x00ffff);
+
+    // Score
+    this.scene.add.image(150, 45, 'neon_star').setDisplaySize(28, 28).setDepth(102);
+    this.scoreText = neonText(this.scene, 210, 45, '0', 24, '#ffffff', 102);
+
+    // Level
+    neonText(this.scene, BOARD_WIDTH / 2 + 50, 45, `LVL ${String(this.level).padStart(2, '0')}`, 24, '#00ffff', 102);
+
+    // Sound toggle
+    addNeonSoundToggle(this.scene, BOARD_WIDTH - 55, 45, 102, (enabled) => {
+      if (this.onSoundClicked) {
+        this.onSoundClicked();
+      }
+    });
+
+    // Bottom Shots Counter HUD
+    const bottomBg = this.scene.add.graphics().setDepth(100);
+    const bottomY = BOARD_HEIGHT - 90;
+    const bottomW = 160;
+    const bottomH = 70;
+    const bottomX = 10;
     
-    // Cyan bottom border
-    this.topBar.lineStyle(2, 0x3ae2ce, 1);
-    this.topBar.beginPath();
-    this.topBar.moveTo(0, 60);
-    this.topBar.lineTo(BOARD_WIDTH, 60);
-    this.topBar.strokePath();
-    this.topBar.setDepth(100);
+    bottomBg.fillStyle(0x050a22, 0.7);
+    bottomBg.fillRoundedRect(bottomX, bottomY, bottomW, bottomH, 12);
+    bottomBg.lineStyle(2, 0x00ffff, 0.8);
+    bottomBg.strokeRoundedRect(bottomX, bottomY, bottomW, bottomH, 12);
+    bottomBg.lineStyle(4, 0x00ffff, 0.3);
+    bottomBg.strokeRoundedRect(bottomX - 2, bottomY - 2, bottomW + 4, bottomH + 4, 14);
 
-    // Left: Home Button (white square)
-    this.scene.add.graphics()
-      .fillStyle(0xffffff, 1)
-      .fillRoundedRect(15, 10, 40, 40, 8)
-      .setDepth(101);
-    this.scene.add.text(35, 30, '⌂', { fontSize: '28px', color: '#1a0b2e', fontStyle: 'bold' }).setOrigin(0.5).setDepth(102);
-    
-    this.scene.add.rectangle(35, 30, 40, 40, 0x000000, 0)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.onHomeClicked && this.onHomeClicked())
-      .setDepth(103);
-
-    // Center: Level Indicator
-    this.scene.add.text(BOARD_WIDTH / 2, 30, `Level ${this.level}`, { fontSize: '22px', color: '#ffffff' }).setOrigin(0.5).setDepth(101);
-
-    // Right: Sound and Pause Buttons
-    this.scene.add.graphics()
-      .fillStyle(0xffffff, 1)
-      .fillRoundedRect(BOARD_WIDTH - 105, 10, 40, 40, 8)
-      .setDepth(101);
-    const soundText = this.scene.add.text(BOARD_WIDTH - 85, 30, '🔊', { fontSize: '20px', color: '#1a0b2e' }).setOrigin(0.5).setDepth(102);
-    
-    this.scene.add.rectangle(BOARD_WIDTH - 85, 30, 40, 40, 0x000000, 0)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => {
-        if (this.onSoundClicked) {
-          const isMuted = this.onSoundClicked();
-          soundText.setText(isMuted ? '🔇' : '🔊');
-        }
-      })
-      .setDepth(103);
-
-    this.scene.add.graphics()
-      .fillStyle(0xffffff, 1)
-      .fillRoundedRect(BOARD_WIDTH - 55, 10, 40, 40, 8)
-      .setDepth(101);
-    this.scene.add.text(BOARD_WIDTH - 35, 30, '⏸', { fontSize: '20px', color: '#1a0b2e' }).setOrigin(0.5).setDepth(102);
-
-    this.scene.add.rectangle(BOARD_WIDTH - 35, 30, 40, 40, 0x000000, 0)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.onPauseClicked && this.onPauseClicked())
-      .setDepth(103);
-
-    // --- BOTTOM BAR ---
-    this.bottomBar = this.scene.add.graphics();
-    this.bottomBar.fillStyle(0x1a0b2e, 1);
-    this.bottomBar.fillRect(0, BOARD_HEIGHT - 100, BOARD_WIDTH, 100);
-    this.bottomBar.setDepth(100);
-
-    // Cyan glowing top border with "U" dip in the middle
-    // Dip radius is 45px.
-    const centerY = BOARD_HEIGHT - 100;
-    const centerX = BOARD_WIDTH / 2;
-    const radius = 45;
-
-    this.bottomBar.lineStyle(3, 0x3ae2ce, 1);
-    this.bottomBar.beginPath();
-    this.bottomBar.moveTo(0, centerY);
-    this.bottomBar.lineTo(centerX - radius, centerY);
-    this.bottomBar.arc(centerX, centerY, radius, Math.PI, 0, true);
-    this.bottomBar.lineTo(BOARD_WIDTH, centerY);
-    this.bottomBar.strokePath();
-
-    // Inner glow
-    this.bottomBar.lineStyle(8, 0x3ae2ce, 0.3);
-    this.bottomBar.beginPath();
-    this.bottomBar.moveTo(0, centerY);
-    this.bottomBar.lineTo(centerX - radius, centerY);
-    this.bottomBar.arc(centerX, centerY, radius, Math.PI, 0, true);
-    this.bottomBar.lineTo(BOARD_WIDTH, centerY);
-    this.bottomBar.strokePath();
-
-    // Score Text (Left)
-    this.scoreText = this.scene.add.text(20, BOARD_HEIGHT - 50, 'Score: 0', { 
-      fontSize: '20px', 
-      color: '#ffffff'
-    }).setOrigin(0, 0.5).setDepth(101);
+    this.scene.add.image(bottomX + 35, bottomY + 35, 'neon_blue').setDisplaySize(40, 40).setDepth(102);
+    this.shotsText = neonText(this.scene, bottomX + 90, bottomY + 25, '25', 28, '#ffffff', 102);
+    neonText(this.scene, bottomX + 90, bottomY + 50, 'SHOTS LEFT', 12, '#00ffff', 102);
   }
 
   updateScore(score: number) {
-    this.scoreText.setText(`Score: ${score}`);
+    this.scoreText.setText(`${score}`);
+  }
+
+  updateShots(shots: number) {
+    this.shotsText.setText(`${shots}`);
   }
 }
+

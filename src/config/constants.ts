@@ -10,10 +10,10 @@ export const BOARD_HEIGHT = 960;
 
 // The horizontal offset to center the grid
 export const GRID_OFFSET_X = (BOARD_WIDTH - (BOARD_WIDTH_BUBBLES * BUBBLE_DIAMETER)) / 2 + BUBBLE_RADIUS;
-export const GRID_OFFSET_Y = 80; // Top margin, below the 55px HUD
+export const GRID_OFFSET_Y = 112; // Top margin, below the HUD bar
 
 export type BubbleColor = 'blue' | 'orange' | 'green' | 'purple' | 'red' | 'yellow';
-export const COLORS: BubbleColor[] = ['blue', 'orange', 'green']; // Only using 3 colors for milestone 1
+export const COLORS: BubbleColor[] = ['blue', 'orange', 'green', 'purple', 'red'];
 
 export const SHOOTER_Y = BOARD_HEIGHT - 70;
 export const SHOOTER_X = BOARD_WIDTH / 2;
