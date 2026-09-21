@@ -1,4 +1,4 @@
-﻿import Phaser from 'phaser';
+import Phaser from 'phaser';
 import { BOARD_HEIGHT, BOARD_WIDTH } from '../config/constants';
 import { SaveSystem } from '../systems/SaveSystem';
 import { addNeonButton, addNeonSoundToggle, neonText } from './UiFactory';
@@ -10,7 +10,6 @@ export class HUD {
   private level: number;
 
   public onHomeClicked?: () => void;
-  public onSoundClicked?: () => boolean;
   public onPauseClicked?: () => void;
 
   constructor(scene: Phaser.Scene, level: number = 1) {
@@ -40,11 +39,7 @@ export class HUD {
     neonText(this.scene, BOARD_WIDTH / 2 + 50, 45, `LVL ${String(this.level).padStart(2, '0')}`, 24, '#00ffff', 102);
 
     // Sound toggle
-    addNeonSoundToggle(this.scene, BOARD_WIDTH - 55, 45, 102, (enabled) => {
-      if (this.onSoundClicked) {
-        this.onSoundClicked();
-      }
-    });
+    addNeonSoundToggle(this.scene, BOARD_WIDTH - 55, 45, 102);
 
     // Bottom Shots Counter HUD
     const bottomBg = this.scene.add.graphics().setDepth(100);

@@ -1,11 +1,10 @@
-﻿import Phaser from 'phaser';
+import Phaser from 'phaser';
 import { BOARD_HEIGHT, BOARD_WIDTH } from '../config/constants';
 import { SaveSystem } from '../systems/SaveSystem';
+import { audioManager } from '../systems/AudioManager';
 
 export function playClick(scene: Phaser.Scene) {
-  if (scene.sound.get('click')) {
-    scene.sound.play('click', { volume: 0.55 });
-  }
+  audioManager.playSFX('click');
 }
 
 export function addSky(scene: Phaser.Scene, _fromLoader = false, depth = -2) {
@@ -131,14 +130,13 @@ export function addNeonSoundToggle(
   x: number,
   y: number,
   depth = 20,
-  onChange?: (enabled: boolean) => void,
 ) {
   const container = scene.add.container(x, y).setDepth(depth);
   const size = 64;
   
   const bg = scene.add.graphics();
   const updateVisuals = () => {
-    const enabled = SaveSystem.getSoundEnabled();
+    const enabled = audioManager.enabled;
     bg.clear();
     
     // Background
@@ -183,13 +181,36 @@ export function addNeonSoundToggle(
   const hit = scene.add.circle(0, 0, size/2 + 10, 0x000000, 0)
     .setInteractive({ useHandCursor: true });
     
-  hit.on('pointerdown', () => {
-    const next = SaveSystem.toggleSound();
-    scene.sound.mute = !next;
+  const press = (scale: number) => {
+    scene.tweens.add({
+      targets: container,
+      scale: scale,
+      duration: 100,
+      ease: 'Sine.easeOut'
+    });
+  };
+
+  hit.on('pointerdown', () => press(0.95));
+  
+  hit.on('pointerup', () => {
+    press(1.05);
+    const next = audioManager.toggle();
     updateVisuals();
+    
+    // Animation visual feedback
+    const originalScale = container.scale;
+    scene.tweens.add({
+      targets: container,
+      scale: originalScale * 1.15,
+      duration: 120,
+      yoyo: true,
+      ease: 'Quad.Out'
+    });
+    
     if (next) playClick(scene);
-    if (onChange) onChange(next);
   });
+  
+  hit.on('pointerout', () => press(1));
   
   container.add([bg, hit]);
   return container;

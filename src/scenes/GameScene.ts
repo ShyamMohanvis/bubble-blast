@@ -12,6 +12,7 @@ import { GridMath } from '../algorithms/GridMath';
 import { MatchFinder } from '../algorithms/MatchFinder';
 import { FloatingBubbleFinder } from '../algorithms/FloatingBubbleFinder';
 import { HUD } from '../ui/HUD';
+import { audioManager } from '../systems/AudioManager';
 import { SaveSystem } from '../systems/SaveSystem';
 import { ATLAS, GAME, UI } from '../assets/keys';
 import { addNeonButton, addNeonPanel, addSky, candyText, playClick } from '../ui/UiFactory';
@@ -77,20 +78,9 @@ export default class GameScene extends Phaser.Scene {
     generateNeonBubbleTextures(this);
     this.drawBoard();
 
-    // Start background music if not already playing
-    let bgm = this.sound.get('bgm') as Phaser.Sound.WebAudioSound;
-    if (!bgm || !bgm.isPlaying) {
-      if (bgm) bgm.destroy();
-      bgm = this.sound.add('bgm', { loop: true, volume: 0 }) as Phaser.Sound.WebAudioSound;
-      bgm.play();
-      this.tweens.add({
-        targets: bgm,
-        volume: 0.25,
-        duration: 2000,
-      });
-    }
+    audioManager.init(this);
+    audioManager.playMusic('bgm');
 
-    this.sound.mute = !SaveSystem.getSoundEnabled();
     this.hud = new HUD(this, this.currentLevel);
     this.hud.updateScore(this.score);
 
@@ -101,11 +91,6 @@ export default class GameScene extends Phaser.Scene {
       }
     };
     this.hud.onPauseClicked = () => this.togglePause();
-    this.hud.onSoundClicked = () => {
-      const newState = SaveSystem.toggleSound();
-      this.sound.mute = !newState;
-      return !newState;
-    };
 
     const levelKey = getLevelAssetKey(this.currentLevel);
     const levelConfig: LevelConfig =
@@ -414,7 +399,7 @@ export default class GameScene extends Phaser.Scene {
     this.shooter.shoot(pointer.x, pointer.y);
     this.gameState = 'PROJECTILE_MOVING';
     this.hud.updateShots(this.shooter.shotsRemaining);
-    this.sound.play('whoosh', { volume: 0.65 });
+    audioManager.playSFX('whoosh');
     this.aimDots.forEach((dot) => dot.setVisible(false));
     this.aimingLine.clear();
     this.aimCursor.setVisible(false);
@@ -465,7 +450,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private async handleCollision(generation: number) {
-    this.sound.play('impact', { volume: 0.5 });
+    audioManager.playSFX('impact');
     const snapPos = this.grid.getNearestEmptyCell(this.shooter.projectileX, this.shooter.projectileY);
 
     const newBubble: BubbleData = {
@@ -533,7 +518,7 @@ export default class GameScene extends Phaser.Scene {
 
   private async popBubbles(bubbles: BubbleData[]) {
     if (bubbles.length > 0) {
-      this.sound.play('pop_neon', { volume: 0.8 });
+      audioManager.playSFX('pop_neon');
     }
 
     // Phase 1: pulse & glow (200ms)
@@ -615,7 +600,7 @@ export default class GameScene extends Phaser.Scene {
 
   private async dropBubbles(bubbles: BubbleData[]) {
     if (bubbles.length > 0) {
-      this.sound.play('cascade', { volume: 0.65 });
+      audioManager.playSFX('cascade');
     }
     const animations: Promise<void>[] = [];
     bubbles.forEach((b) => {
@@ -724,12 +709,12 @@ export default class GameScene extends Phaser.Scene {
       .setDepth(449).setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets: screenFlash, alpha: 0, duration: 400, onComplete: () => screenFlash.destroy() });
     this.cameras.main.shake(300, 0.01);
-    this.sound.play('burst', { volume: 0.75 });
+    audioManager.playSFX('burst');
 
     await new Promise<void>((resolve) => this.time.delayedCall(500, resolve));
 
     // LEVEL COMPLETE text
-    this.sound.play('victory', { volume: 0.8 });
+    audioManager.playSFX('victory');
     const title = candyText(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 - 130, 'LEVEL COMPLETE', 36, '#00ffff', 452);
     this.tweens.add({ targets: title, scale: 1.1, duration: 300, ease: 'Back.Out' });
 
@@ -746,7 +731,7 @@ export default class GameScene extends Phaser.Scene {
           lifespan: 600, quantity: 20, blendMode: 'ADD', emitting: false,
         }).setDepth(451);
         fwEmit.explode(20);
-        this.sound.play('impact', { volume: 0.3 });
+        audioManager.playSFX('impact');
         this.time.delayedCall(800, () => fwEmit.destroy());
       });
     }
@@ -779,7 +764,7 @@ export default class GameScene extends Phaser.Scene {
         onComplete: () => {
           if (isEarned) {
             starImg.setTexture(filledKey);
-            this.sound.play('victory', { volume: 0.5 });
+            audioManager.playSFX('victory');
             this.tweens.add({
               targets: starImg, scaleX: 1.4, scaleY: 1.4, duration: 150, yoyo: true, ease: 'Quad.Out',
             });
