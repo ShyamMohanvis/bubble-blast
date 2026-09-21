@@ -85,6 +85,12 @@ export function generateNeonBubbleTextures(scene: Phaser.Scene): void {
     ctx.fillStyle = innerGlow;
     ctx.fill();
 
+    // Small sharp reflection (white/cyan)
+    ctx.beginPath();
+    ctx.ellipse(cx - r * 0.45, cy - r * 0.45, r * 0.25, r * 0.12, Math.PI / 5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.fill();
+
     scene.textures.addCanvas(key, canvas);
   }
 

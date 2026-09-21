@@ -77,6 +77,19 @@ export default class GameScene extends Phaser.Scene {
     generateNeonBubbleTextures(this);
     this.drawBoard();
 
+    // Start background music if not already playing
+    let bgm = this.sound.get('bgm') as Phaser.Sound.WebAudioSound;
+    if (!bgm || !bgm.isPlaying) {
+      if (bgm) bgm.destroy();
+      bgm = this.sound.add('bgm', { loop: true, volume: 0 }) as Phaser.Sound.WebAudioSound;
+      bgm.play();
+      this.tweens.add({
+        targets: bgm,
+        volume: 0.25,
+        duration: 2000,
+      });
+    }
+
     this.sound.mute = !SaveSystem.getSoundEnabled();
     this.hud = new HUD(this, this.currentLevel);
     this.hud.updateScore(this.score);
@@ -401,7 +414,7 @@ export default class GameScene extends Phaser.Scene {
     this.shooter.shoot(pointer.x, pointer.y);
     this.gameState = 'PROJECTILE_MOVING';
     this.hud.updateShots(this.shooter.shotsRemaining);
-    this.sound.play('shoot', { volume: 0.55 });
+    this.sound.play('whoosh', { volume: 0.65 });
     this.aimDots.forEach((dot) => dot.setVisible(false));
     this.aimingLine.clear();
     this.aimCursor.setVisible(false);
@@ -452,6 +465,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private async handleCollision(generation: number) {
+    this.sound.play('impact', { volume: 0.5 });
     const snapPos = this.grid.getNearestEmptyCell(this.shooter.projectileX, this.shooter.projectileY);
 
     const newBubble: BubbleData = {
@@ -519,7 +533,7 @@ export default class GameScene extends Phaser.Scene {
 
   private async popBubbles(bubbles: BubbleData[]) {
     if (bubbles.length > 0) {
-      this.sound.play(`pop${Phaser.Math.Between(1, 4)}`, { volume: 0.7 });
+      this.sound.play('pop_neon', { volume: 0.8 });
     }
 
     // Phase 1: pulse & glow (200ms)
@@ -600,6 +614,9 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private async dropBubbles(bubbles: BubbleData[]) {
+    if (bubbles.length > 0) {
+      this.sound.play('cascade', { volume: 0.65 });
+    }
     const animations: Promise<void>[] = [];
     bubbles.forEach((b) => {
       this.grid.removeBubble(b.row, b.col);
@@ -702,17 +719,37 @@ export default class GameScene extends Phaser.Scene {
     burstEmitter.explode(40);
     this.time.delayedCall(900, () => burstEmitter.destroy());
 
-    // Screen flash
+    // Screen flash and shake
     const screenFlash = this.add.rectangle(BOARD_WIDTH / 2, BOARD_HEIGHT / 2, BOARD_WIDTH, BOARD_HEIGHT, 0xffffff, 0.3)
       .setDepth(449).setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets: screenFlash, alpha: 0, duration: 400, onComplete: () => screenFlash.destroy() });
-    this.sound.play('pop4', { volume: 0.7 });
+    this.cameras.main.shake(300, 0.01);
+    this.sound.play('burst', { volume: 0.75 });
 
     await new Promise<void>((resolve) => this.time.delayedCall(500, resolve));
 
     // LEVEL COMPLETE text
+    this.sound.play('victory', { volume: 0.8 });
     const title = candyText(this, BOARD_WIDTH / 2, BOARD_HEIGHT / 2 - 130, 'LEVEL COMPLETE', 36, '#00ffff', 452);
     this.tweens.add({ targets: title, scale: 1.1, duration: 300, ease: 'Back.Out' });
+
+    // Fireworks around the UI
+    const fwColors = [0x00ffff, 0x0088ff, 0xaa44ff, 0xff00ff, 0xffdd44];
+    for (let i = 0; i < 5; i++) {
+      this.time.delayedCall(200 + i * 350, () => {
+        const fx = BOARD_WIDTH / 2 + Phaser.Math.Between(-150, 150);
+        const fy = BOARD_HEIGHT / 2 + Phaser.Math.Between(-200, 100);
+        const fwEmit = this.add.particles(fx, fy, 'neon_particle', {
+          speed: { min: 80, max: 200 }, angle: { min: 0, max: 360 },
+          scale: { start: 1, end: 0 }, alpha: { start: 1, end: 0 },
+          tint: fwColors[Phaser.Math.Between(0, fwColors.length - 1)],
+          lifespan: 600, quantity: 20, blendMode: 'ADD', emitting: false,
+        }).setDepth(451);
+        fwEmit.explode(20);
+        this.sound.play('impact', { volume: 0.3 });
+        this.time.delayedCall(800, () => fwEmit.destroy());
+      });
+    }
 
     await new Promise<void>((resolve) => this.time.delayedCall(400, resolve));
 
@@ -737,23 +774,33 @@ export default class GameScene extends Phaser.Scene {
 
       const starImg = this.add.image(sx, starY, emptyKey).setDisplaySize(48, 48).setDepth(453).setScale(0);
       this.tweens.add({
-        targets: starImg, scale: 1, duration: 300, delay: i * 250,
+        targets: starImg, scale: 1, angle: 360, duration: 400, delay: i * 250,
         ease: 'Back.Out',
         onComplete: () => {
           if (isEarned) {
             starImg.setTexture(filledKey);
+            this.sound.play('victory', { volume: 0.5 });
             this.tweens.add({
-              targets: starImg, scaleX: 1.3, scaleY: 1.3, duration: 150, yoyo: true, ease: 'Quad.Out',
+              targets: starImg, scaleX: 1.4, scaleY: 1.4, duration: 150, yoyo: true, ease: 'Quad.Out',
             });
+            
+            // Expanding energy ring
+            const ring = this.add.circle(sx, starY, 20, 0xffdd44, 0).setDepth(452);
+            ring.setStrokeStyle(4, 0xffdd44, 1);
+            this.tweens.add({
+              targets: ring, radius: 60, alpha: 0, duration: 400, ease: 'Cubic.Out',
+              onComplete: () => ring.destroy()
+            });
+
             // Star particle burst
             const sEmitter = this.add.particles(sx, starY, 'neon_particle', {
-              speed: { min: 40, max: 120 }, angle: { min: 0, max: 360 },
-              scale: { start: 0.8, end: 0 }, alpha: { start: 1, end: 0 },
-              tint: 0xffff00, lifespan: 400, quantity: 8, blendMode: 'ADD', emitting: false,
+              speed: { min: 50, max: 150 }, angle: { min: 0, max: 360 },
+              scale: { start: 1.2, end: 0 }, alpha: { start: 1, end: 0 },
+              tint: 0xffdd44, lifespan: 500, quantity: 12, blendMode: 'ADD', emitting: false,
             });
             sEmitter.setDepth(454);
-            sEmitter.explode(8);
-            this.time.delayedCall(500, () => sEmitter.destroy());
+            sEmitter.explode(12);
+            this.time.delayedCall(600, () => sEmitter.destroy());
           }
         },
       });
@@ -801,16 +848,17 @@ export default class GameScene extends Phaser.Scene {
         .setDepth(10);
       this.bubbleSprites.set(b.id, sprite);
 
-      // Idle pulse
+      // Subtle Idle pulse
       this.tweens.add({
         targets: sprite,
-        scaleX: sprite.scaleX * 1.04,
-        scaleY: sprite.scaleY * 1.04,
+        scaleX: sprite.scaleX * 1.02,
+        scaleY: sprite.scaleY * 1.02,
+        alpha: 0.9,
         yoyo: true,
         repeat: -1,
-        duration: 1200 + Phaser.Math.Between(-200, 200),
+        duration: 1500 + Phaser.Math.Between(-300, 300),
         ease: 'Sine.easeInOut',
-        delay: Phaser.Math.Between(0, 600),
+        delay: Phaser.Math.Between(0, 800),
       });
     });
   }

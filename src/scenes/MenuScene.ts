@@ -1,4 +1,4 @@
-﻿import Phaser from 'phaser';
+import Phaser from 'phaser';
 import { BOARD_HEIGHT, BOARD_WIDTH, type BubbleColor } from '../config/constants';
 import { SaveSystem } from '../systems/SaveSystem';
 import { addNeonButton, addNeonPanel, addSky, addNeonSoundToggle, neonText } from '../ui/UiFactory';
@@ -13,6 +13,18 @@ export default class MenuScene extends Phaser.Scene {
     generateNeonBubbleTextures(this);
     addSky(this);
     this.spawnDecorBubbles();
+
+    // Fade out and stop background music if it was playing from GameScene
+    const bgm = this.sound.get('bgm') as Phaser.Sound.WebAudioSound;
+    if (bgm && bgm.isPlaying) {
+      this.tweens.add({
+        targets: bgm,
+        volume: 0,
+        duration: 1000,
+        onComplete: () => { bgm.stop(); bgm.destroy(); }
+      });
+    }
+    this.sound.mute = !SaveSystem.getSoundEnabled();
 
     // Futuristic Title
     neonText(this, BOARD_WIDTH / 2, 220, 'BUBBLE\nSHOOTER', 56, '#00ffff', 10);

@@ -47,12 +47,15 @@ export default class PreloadScene extends Phaser.Scene {
     this.load.atlas(ATLAS.UI, `${base}assets/ui/main.png`, `${base}assets/ui/main.json`);
     this.load.atlas(ATLAS.GAME, `${base}assets/game/game.png`, `${base}assets/game/game.json`);
 
+    // Load new neon audio
+    this.load.audio('bgm', `${base}assets/audio/new/bgm.mp3`);
+    this.load.audio('whoosh', `${base}assets/audio/new/whoosh.wav`);
+    this.load.audio('impact', `${base}assets/audio/new/impact.wav`);
+    this.load.audio('pop_neon', `${base}assets/audio/new/pop.mp3`);
+    this.load.audio('cascade', `${base}assets/audio/new/cascade.wav`);
+    this.load.audio('victory', `${base}assets/audio/new/victory.wav`);
+    this.load.audio('burst', `${base}assets/audio/explosion.wav`);
     this.load.audio('click', `${base}assets/audio/snd_clickBase.mp3`);
-    this.load.audio('shoot', `${base}assets/audio/snd_bubbleShot.mp3`);
-    this.load.audio('pop1', `${base}assets/audio/snd_gameBubble_1.mp3`);
-    this.load.audio('pop2', `${base}assets/audio/snd_gameBubble_2.mp3`);
-    this.load.audio('pop3', `${base}assets/audio/snd_gameBubble_3.mp3`);
-    this.load.audio('pop4', `${base}assets/audio/snd_gameBubble_4.mp3`);
 
     for (let i = 1; i <= 10; i++) {
       const levelKey = getLevelAssetKey(i);
