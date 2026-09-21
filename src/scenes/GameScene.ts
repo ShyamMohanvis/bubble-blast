@@ -450,7 +450,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private async handleCollision(generation: number) {
-    audioManager.playSFX('impact');
+    audioManager.playSFX('click', 0.3);
     const snapPos = this.grid.getNearestEmptyCell(this.shooter.projectileX, this.shooter.projectileY);
 
     const newBubble: BubbleData = {
@@ -731,7 +731,7 @@ export default class GameScene extends Phaser.Scene {
           lifespan: 600, quantity: 20, blendMode: 'ADD', emitting: false,
         }).setDepth(451);
         fwEmit.explode(20);
-        audioManager.playSFX('impact');
+        audioManager.playSFX('pop_neon', 0.25);
         this.time.delayedCall(800, () => fwEmit.destroy());
       });
     }

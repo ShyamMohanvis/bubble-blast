@@ -5,6 +5,7 @@ const AUDIO_SAVE_KEY = 'bubbleShooterAudioEnabled';
 export class AudioManager {
   private static instance: AudioManager;
   public enabled: boolean = true;
+  
   public musicVolume: number = 0.10;
   public sfxVolume: number = 0.65;
   
@@ -27,9 +28,9 @@ export class AudioManager {
     this.scene.sound.mute = !this.enabled;
     
     // Handle browser autoplay unlocking
-    if (this.scene.sound.context.state === 'suspended') {
+    if ((this.scene.sound as Phaser.Sound.WebAudioSoundManager).context.state === 'suspended') {
       const unlockAudio = () => {
-        this.scene.sound.context.resume().then(() => {
+        (this.scene.sound as Phaser.Sound.WebAudioSoundManager).context.resume().then(() => {
           if (this.enabled && this.currentMusic && !this.currentMusic.isPlaying) {
             this.currentMusic.play();
           }
@@ -95,7 +96,7 @@ export class AudioManager {
     // Prevent duplicate music
     if (this.currentMusic && this.currentMusic.key === key) {
       if (!this.currentMusic.isPlaying && this.enabled) {
-        if (this.scene.sound.context.state === 'running') {
+        if ((this.scene.sound as Phaser.Sound.WebAudioSoundManager).context.state === 'running') {
           this.currentMusic.play();
         }
       }
@@ -110,7 +111,7 @@ export class AudioManager {
     }) as Phaser.Sound.WebAudioSound;
 
     if (this.enabled) {
-      if (this.scene.sound.context.state === 'running') {
+      if ((this.scene.sound as Phaser.Sound.WebAudioSoundManager).context.state === 'running') {
         this.currentMusic.play();
       }
     }
